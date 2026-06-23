@@ -1,3 +1,4 @@
-int x;
-int y = 1;
+long x;
+int32_t y = 1;
+const char charArray[];
 x + y;

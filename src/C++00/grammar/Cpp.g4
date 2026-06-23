@@ -189,9 +189,8 @@ declarator
 
 // 4. Groups all your type lexer tokens into one parser concept
 primitiveType
-    : BOOL | VOID | DOUBLE | FLOAT | INT | LONG | SHORT | CHAR
-
-    | CHAR16_T | CHAR32_T | WCHAR_T | INT128 | INT64 | INT32 | INT16 | INT8
+    : BOOL | VOID | DOUBLE | FLOAT | INT128 | INT64 | INT32 | INT16 | INT8
+    | CHAR16_T | CHAR32_T | WCHAR_T
     ;
 
 // Matches any sequence of modifiers preceding a type definition
@@ -201,7 +200,7 @@ declarationModifiers
 
 // Modifiers that fundamentally alter the data storage layout itself
 typeModifier
-    : CONST | VOLATILE | SIGNED | UNSIGNED | SHORT | LONG
+    : CONST | VOLATILE | SIGNED | UNSIGNED
     ;
 
 // Modifiers controlling lifetime scope and thread boundaries

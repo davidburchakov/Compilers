@@ -59,7 +59,7 @@ add_custom_target(
 )
 
 # ---------------------------
-# 2. EXECUTABLE TARGET (Ditch .cppm from here)
+# 2. EXECUTABLE TARGET (Handwritten module files removed completely from here)
 # ---------------------------
 add_executable(AntlrQtEditor
         src/C++00/main.cpp
@@ -70,14 +70,16 @@ add_executable(AntlrQtEditor
 )
 
 # ---------------------------
-# 3. REGISTER C++23 MODULES SEPARATELY (Fixes the "no target" warning!)
+# 3. REGISTER ALL C++23 MODULES SEPARATELY (Including your new aux module!)
 # ---------------------------
 target_sources(AntlrQtEditor
         PRIVATE
         FILE_SET compiler_modules TYPE CXX_MODULES
-        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src/C++00/symbolTable
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} # Expands base to cover both directories safely
         FILES
         src/C++00/symbolTable/SymbolTable.cppm
+        src/C++00/symbolTable/SymbolTableVisitor.cppm
+        src/C++00/auxiliary/Logger.cppm            # Registered cleanly here
 )
 
 add_dependencies(AntlrQtEditor GenerateGrammar)
@@ -97,8 +99,7 @@ target_compile_definitions(AntlrQtEditor PRIVATE
         ANTLR4CPP_USING_ABSEIL=0
 )
 
-
-# Add this at the absolute bottom of your CMakeLists.txt file
+# Suppress deprecation warnings from legacy ANTLR code structures
 target_compile_options(AntlrQtEditor PRIVATE
         -Wno-deprecated-declarations
 )

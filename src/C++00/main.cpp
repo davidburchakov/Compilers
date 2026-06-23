@@ -1,19 +1,6 @@
-// 2. Place ALL traditional #include files inside this fragment block
-#include <QApplication>
-#include <QFile>
-#include <QTextStream>
-#include <QCoreApplication>
-#include <QDebug>
-#include <fstream>
-
-// Clean Qt's 'emit' macro before loading ANTLR internals
-#undef emit
-
-#include "antlr4-runtime.h"
-#include "CppLexer.h"
-#include "CppParser.h"
-#include "../Qt/mainwindow.h"
-
+// ============================================================
+// 1. TRADITIONAL HEADERS & LEGACY INCLUDES
+// ============================================================
 #include <QApplication>
 #include <QFile>
 #include <QTextStream>
@@ -22,6 +9,7 @@
 #include <fstream>
 #include <iostream>
 
+// Wipe out Qt's 'emit' keyword macro mapping before loading ANTLR
 #undef emit
 
 #include "antlr4-runtime.h"
@@ -29,14 +17,16 @@
 #include "CppParser.h"
 #include "../Qt/mainwindow.h"
 
-
-// 4. NOW import your C++23 Module cleanly
+// ============================================================
+// 2. MODERN C++23 MODULE IMPORTS
+// ============================================================
 import SymbolTableModule;
-
+import SymbolTableVisitorModule;
+import Logger;
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
-    // Load your input source stream file next to the binary
+    // Load your input source stream file using absolute directory verification path
     std::ifstream fileStream("/home/incidence/Desktop/CompilerCpp/src/C++00/input.txt");
     if (!fileStream.is_open()) {
         qCritical() << "Semantic Error: Could not locate input.txt in the runtime folder!";
@@ -52,7 +42,16 @@ int main(int argc, char *argv[]) {
     CppParser parser(&tokens);
     CppParser::TranslationUnitContext* tree = parser.translationUnit();
 
+    CppZero::Logger::printPrettyAST(tree, parser.getRuleNames());
+
+    // Instantiate Table and Visitor data containers
     CppZero::SymbolTable symbolTable;
+    CppZero::SymbolTableVisitor visitor(symbolTable);
+
+    // Run the traversal pass to capture symbols
+    visitor.visit(tree);
+
+    symbolTable.printAll();
 
     qInfo() << "AST semantic processing complete. Launching interface tree viewer...";
 
