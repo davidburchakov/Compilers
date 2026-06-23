@@ -17,7 +17,7 @@ public:
 
 private slots:
     void onTextChanged();
-    void buildAST(const std::string &code);
+    void buildAST(const std::string &code) const;
 
 private:
     Ui::MainWindow *ui;

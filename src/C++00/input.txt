@@ -1,0 +1,4 @@
+WORD x;
+int32_t y = 1;
+const BYTE charArray[];
+x + y;
