@@ -27,6 +27,9 @@
 #include <QBrush>
 #include <QFont>
 #include <cmath>
+#include <QMouseEvent> // Added for click event tracking
+#include <QWheelEvent> // Added for scroll event tracking
+#include <QScrollBar>  // Added to shift scene positions manually
 
 // ============================================================
 // 3. BRING IN COMPILER MODULES FOR LIVE RE-COMPILATION
@@ -81,7 +84,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
-    // DYNAMIC WIDGET SWAP: Replaces the broken QTreeWidget definition with QGraphicsView at runtime
+    // DYNAMIC WIDGET SWAP
     QWidget *oldTree = ui->astTree;
     QLayout *parentLayout = oldTree->parentWidget() ? oldTree->parentWidget()->layout() : nullptr;
 
@@ -91,16 +94,24 @@ MainWindow::MainWindow(QWidget *parent)
     }
     oldTree->deleteLater();
 
-    // Re-assign our active wrapper layout reference back to the original pointer mapping
-    // We cast it to QTreeWidget* to keep ui->astTree content valid across compilation lookups
     ui->astTree = reinterpret_cast<QTreeWidget*>(graphicsView);
 
-    // Initialize the graphics scene for custom diagram generation
+    // CANVAS ATTRIBUTES & CONTROLS SETUP
     astScene = new QGraphicsScene(this);
     graphicsView->setScene(astScene);
     graphicsView->setRenderHint(QPainter::Antialiasing);
 
-    // Load initial source data stream file text directly on boot
+    // Disable traditional scrollbars to keep a clean diagram workspace
+    graphicsView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    graphicsView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    // Enable scroll-hand drag modifications safely
+    graphicsView->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+
+    // Install the event filter directly onto the interactive viewport
+    graphicsView->viewport()->installEventFilter(this);
+
+    // Load file stream
     QFile file("/home/incidence/Desktop/CompilerCpp/src/C++00/input.txt");
     if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream in(&file);
@@ -108,12 +119,7 @@ MainWindow::MainWindow(QWidget *parent)
         file.close();
     }
 
-    connect(ui->codeEditor,
-            &QPlainTextEdit::textChanged,
-            this,
-            &MainWindow::onTextChanged);
-
-    // Initial parsing, tree generation, and assembly generation pass
+    connect(ui->codeEditor, &QPlainTextEdit::textChanged, this, &MainWindow::onTextChanged);
     onTextChanged();
 }
 
@@ -277,4 +283,80 @@ void MainWindow::buildAST(const std::string &code) const
     if (cachedWidths[tree] > 0) {
         drawTree(tree, 0.0, nodeRadius + 10.0, nullptr, 0.0, -1.0);
     }
+}
+
+// ============================================================================
+// CANVAS PANNING AND ZOOMING CONTROLS (MIDDLE MOUSE CLICK & WHEEL)
+// ============================================================================
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    // Access our runtime view via the safety cast pointer
+    QGraphicsView *view = reinterpret_cast<QGraphicsView*>(ui->astTree);
+
+    if (view && watched == view->viewport()) {
+        switch (event->type()) {
+
+            // 1. ZOOM IN & ZOOM OUT VIA MOUSE WHEEL SCROLL
+            case QEvent::Wheel: {
+                QWheelEvent *wheelEvent = static_cast<QWheelEvent*>(event);
+                double scaleFactor = 1.15;
+
+                if (wheelEvent->angleDelta().y() > 0) {
+                    // Zoom In
+                    view->scale(scaleFactor, scaleFactor);
+                } else {
+                    // Zoom Out
+                    view->scale(1.0 / scaleFactor, 1.0 / scaleFactor);
+                }
+                wheelEvent->accept();
+                return true;
+            }
+
+            // 2. DETECT MIDDLE CLICK PRESS TO INITIATE PANNING
+            case QEvent::MouseButtonPress: {
+                QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+                if (mouseEvent->button() == Qt::MiddleButton) {
+                    isPanning = true;
+                    panLastMousePos = mouseEvent->pos();
+                    view->setCursor(Qt::ClosedHandCursor);
+                    mouseEvent->accept();
+                    return true;
+                }
+                break;
+            }
+
+            // 3. SHIFT CANVAS COORDINATES DYNAMICALLY DURING MIDDLE-DRAG
+            case QEvent::MouseMove: {
+                QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+                if (isPanning) {
+                    QPoint delta = mouseEvent->pos() - panLastMousePos;
+                    panLastMousePos = mouseEvent->pos();
+
+                    // Shift view scroll bars relative to frame movement scale
+                    view->horizontalScrollBar()->setValue(view->horizontalScrollBar()->value() - delta.x());
+                    view->verticalScrollBar()->setValue(view->verticalScrollBar()->value() - delta.y());
+
+                    mouseEvent->accept();
+                    return true;
+                }
+                break;
+            }
+
+            // 4. RELEASE PANNING STATE ON MIDDLE MOUSE BUTTON RELEASE
+            case QEvent::MouseButtonRelease: {
+                QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+                if (mouseEvent->button() == Qt::MiddleButton) {
+                    isPanning = false;
+                    view->unsetCursor();
+                    mouseEvent->accept();
+                    return true;
+                }
+                break;
+            }
+
+            default:
+                break;
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
