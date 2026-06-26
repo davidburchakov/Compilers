@@ -14,10 +14,26 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
+# ---------------------------
+# 1. FETCH ABSEIL (Done early to ensure compiler flags align)
+# ---------------------------
+include(FetchContent)
+FetchContent_Declare(
+        absl
+        GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+        GIT_TAG        20240722.0 # Stable LTS release with solid C++23 support
+)
+# Force Abseil to respect our global C++23 standard option
+set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(absl)
+
+# ---------------------------
+# 2. FIND PACKAGES
+# ---------------------------
 find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
 find_package(Java REQUIRED)
 
-# 1. ANTLR runtime FIRST
+# ANTLR runtime FIRST
 add_subdirectory(antlr4/runtime/Cpp)
 
 set(ANTLR_JAR
@@ -59,7 +75,7 @@ add_custom_target(
 )
 
 # ---------------------------
-# 2. EXECUTABLE TARGET (Handwritten module files removed completely from here)
+# 3. EXECUTABLE TARGET
 # ---------------------------
 add_executable(AntlrQtEditor
         src/C++00/main.cpp
@@ -70,12 +86,12 @@ add_executable(AntlrQtEditor
 )
 
 # ---------------------------
-# 3. REGISTER ALL C++23 MODULES SEPARATELY (Including your new aux module!)
+# 4. REGISTER ALL C++23 MODULES SEPARATELY
 # ---------------------------
 target_sources(AntlrQtEditor
         PRIVATE
         FILE_SET compiler_modules TYPE CXX_MODULES
-        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} # Expands base to cover both directories safely
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
         src/C++00/symbolTable/SymbolTable.cppm
         src/C++00/symbolTable/SymbolTableVisitor.cppm
@@ -95,10 +111,17 @@ target_include_directories(AntlrQtEditor PRIVATE
         antlr4/runtime/Cpp/runtime/src
 )
 
+# ---------------------------
+# 5. LINK LIBRARIES & LINK ABSEIL COMPONENTS
+# ---------------------------
 target_link_libraries(AntlrQtEditor PRIVATE
         Qt6::Widgets
         Qt6::Concurrent
         antlr4_shared
+        # Link only the granular Abseil components you actually need:
+        absl::flat_hash_map
+        absl::strings
+        absl::statusor
 )
 
 target_compile_definitions(AntlrQtEditor PRIVATE
