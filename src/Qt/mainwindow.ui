@@ -36,7 +36,19 @@
                     </widget>
                 </item>
 
-                <!-- Third Column: Unoptimized Assembly Output Viewer -->
+                <!-- Third Column: SSA Intermediate Representation Viewer -->
+                <item>
+                    <widget class="QPlainTextEdit" name="ssaViewer">
+                        <property name="readOnly">
+                            <bool>true</bool>
+                        </property>
+                        <property name="placeholderText">
+                            <string>SSA Intermediate Representation...</string>
+                        </property>
+                    </widget>
+                </item>
+                
+                <!-- Fourth Column: Unoptimized Assembly Output Viewer -->
                 <item>
                     <widget class="QPlainTextEdit" name="plainAssemblyViewer">
                         <property name="readOnly">
@@ -48,7 +60,7 @@
                     </widget>
                 </item>
 
-                <!-- Fourth Column: Optimized Assembly Output Viewer -->
+                <!-- Fifth Column: Optimized Assembly Output Viewer -->
                 <item>
                     <widget class="QPlainTextEdit" name="optimizedAssemblyViewer">
                         <property name="readOnly">

@@ -19,6 +19,7 @@ public:
 
     void setOptimizedAssemblyText(const std::string &assemblyCode);
     void setPlainAssemblyText(const std::string &assemblyCode);
+    void setSSAIntermediateText(const std::string &ssaCode);
 protected:
     // Intercepts middle mouse clicks and scroll events on the canvas
 

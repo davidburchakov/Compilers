@@ -195,6 +195,13 @@ void MainWindow::setPlainAssemblyText(const std::string &assemblyCode)
     );
 }
 
+void MainWindow::setSSAIntermediateText(const std::string &ssaCode)
+{
+    ui->ssaViewer->setPlainText(
+        QString::fromStdString(ssaCode)
+    );
+}
+
 // ============================================================================
 // 6. BUILD AST IMPLEMENTATION
 // ============================================================================
