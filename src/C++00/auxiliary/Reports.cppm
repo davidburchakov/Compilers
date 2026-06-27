@@ -6,6 +6,7 @@ module;
 #include <utility>
 #include <vector>
 #include <string>
+#include <sstream>
 export module Reports;
 import LogColor;
 
@@ -28,14 +29,14 @@ export namespace CppZero {
                     break;
                 case ErrorCodeEnum::kWarning:
                     report_msg_ = std::string(LogColor::YELLOW) + "[Warning] " + LogColor::RESET + std::move(
-                                    report_message);
+                                      report_message);
                     break;
                 case ErrorCodeEnum::kInfo:
                     report_msg_ = std::string(LogColor::BLUE) + "[Info] " + LogColor::RESET + std::move(report_message);
                     break;
                 case ErrorCodeEnum::kSuggestion:
                     report_msg_ = std::string(LogColor::CYAN) + "[Suggestion] " + LogColor::RESET + std::move(
-                                    report_message);
+                                      report_message);
                     break;
                 default:
                     report_msg_ = std::move(report_message);
@@ -48,7 +49,6 @@ export namespace CppZero {
     private:
         std::string report_msg_;
         ErrorCodeEnum error_code_;
-
     };
 
 
@@ -66,9 +66,29 @@ export namespace CppZero {
         }
 
         Reports() = default;
+
         [[nodiscard]] bool noErrors() const { return errors.empty(); }
         [[nodiscard]] bool noWarnings() const { return warnings.empty(); }
         [[nodiscard]] bool noSuggestions() const { return suggestions.empty(); }
         [[nodiscard]] bool noInfo() const { return info.empty(); }
+
+        [[nodiscard]] std::string toString() const {
+            std::ostringstream oss;
+
+            for (const auto &r: errors) {
+                oss << r.getMessage() << "\n";
+            }
+            for (const auto &r: warnings) {
+                oss << r.getMessage() << "\n";
+            }
+            for (const auto &r: suggestions) {
+                oss << r.getMessage() << "\n";
+            }
+            for (const auto &r: info) {
+                oss << r.getMessage() << "\n";
+            }
+
+            return oss.str();
+        }
     };
 };

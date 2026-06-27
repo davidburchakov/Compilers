@@ -68,9 +68,7 @@ int main(int argc, char *argv[]) {
     symbolTable.PrintAll();
 
     if (!symbol_table_reports.noErrors()) {
-        for (const CppZero::Report &error: symbol_table_reports.errors) {
-            std::cout << error.getMessage() << '\n';
-        }
+        std::cout << symbol_table_reports.toString() << '\n';
         // throw std::runtime_error("Semantic errors during symbol table build-up");
     }
 

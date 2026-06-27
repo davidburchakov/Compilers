@@ -208,7 +208,7 @@ primitiveType
 
 // Matches any sequence of modifiers preceding a type definition
 declarationModifiers
-    : (cvQualifier | typeSpecifier | storageSpecifier | functionPrefixSpecifier | functionPostfixSpecifier)*
+    : (cvQualifier | typeSpecifier | storageSpecifier | compileTimeSpecifier )*
     ;
 
 cvQualifier
@@ -220,6 +220,10 @@ typeSpecifier
 // Modifiers controlling lifetime scope and thread boundaries
 storageSpecifier
     : STATIC | EXTERN | THREAD_LOCAL | MUTABLE | AUTO
+    ;
+
+compileTimeSpecifier
+    : CONSTEXPR | CONSTINIT | INLINE
     ;
 
 functionPrefixSpecifier

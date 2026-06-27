@@ -66,19 +66,22 @@ namespace CppZero {
         std::string base_type;             // e.g., "int", "double", "MyClass"
         int pointer_count = 0;             // 0 = raw, 1 = ptr*, 2 = ptr**
         int array_dimensions = 0;          // 0 = single element, 1 = arr[], 2 = matrix[][]
-        bool is_lvalue_reference = false;  // true = standard reference (&)
-        bool is_rvalue_reference = false;  // true = move reference (&&)
-        bool is_const = false;             // true = constant modifier
-        bool is_volatile = false;          // true = volatile modifier
+        bool is_lvalue_reference = false;  // default = false; true = standard reference (&)
+        bool is_rvalue_reference = false;  // default = false; true = move reference (&&)
+        bool is_const = false;             // default = false; true = constant modifier
+        bool is_volatile = false;          // default = false; true = volatile modifier
         bool is_signed = true;             // default = true
+        bool is_inline = true;             // default = true; always try to inline if viable
+        bool is_constexpr = false;         // default = false;
+        bool is_constinit = false;         // default = false;
         StorageClass storage = StorageClass::kAuto;
     };
 
     export struct Symbol {
-        std::string name;            // Identifier
-        std::string tree_node_name;  // Abstract Syntax Tree Node
-        Type type;                   // info, e.g., is_const, storage type
-        int declaration_line = 0;    // respective line
+        std::string name;               // Identifier
+        std::string tree_node_name;     // Abstract Syntax Tree Node
+        Type type;                      // info, e.g., is_const, storage type
+        size_t declaration_line = 0;    // respective line
     };
 
     export class SymbolTable {
