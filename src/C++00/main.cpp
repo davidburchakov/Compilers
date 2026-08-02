@@ -16,6 +16,7 @@
 import SymbolTableModule;
 import SymbolTableVisitorModule;
 import SemanticAnalysis;
+import SSAModule;
 import ASTOptimizer;
 import AssemblyGenerator;
 import Logger;
@@ -83,6 +84,12 @@ int main(int argc, char *argv[]) {
             aggregatedLog += std::string(error.getMessage()) + "\n";
         }
     }
+
+    /* * * * * * * * * * * * * SSA / IR * * * * * * * * * * * * */
+    CppZero::SSAConverter ssa_converter{};
+    CppZero::SSAProgram ssa_program = ssa_converter.convert(tree, symbolTable);
+    window.setSSAIntermediateText(ssa_program.toString());
+
     /* * * * * * * * * * * * * Optimization * * * * * * * * * * * * */
     std::cout << "\nStarting Optimization Pass...\n";
     CppZero::ASTOptimizer optimizer;

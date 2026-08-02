@@ -102,6 +102,7 @@ target_sources(AntlrQtEditor
         src/C++00/auxiliary/LogColor.cppm
         src/C++00/optimizations/ASTOptimizer.cppm
         src/C++00/assembly/AssemblyGenerator.cppm
+        src/C++00/SSA/SSAModule.cppm
 )
 
 add_dependencies(AntlrQtEditor GenerateGrammar)
