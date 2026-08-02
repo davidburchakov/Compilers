@@ -12,7 +12,7 @@ export module Logger;
 
 namespace CppZero::Logger {
 
-    // 3. Mark the printing loop utility function as 'export' so main can see it
+    // Marked as 'export' so main can see it
     export void printPrettyAST(antlr4::tree::ParseTree *node, const std::vector<std::string> &ruleNames, int depth = 0) {
         if (!node) return;
 
@@ -23,7 +23,7 @@ namespace CppZero::Logger {
         }
 
         // Identify and print the Node label
-        std::string nodeName;
+        std::string nodeName{};
         if (auto* r = dynamic_cast<antlr4::ParserRuleContext*>(node)) {
             nodeName = ruleNames[r->getRuleIndex()]; // Rule Name (e.g. "variableDeclaration")
         } else {

@@ -13,7 +13,6 @@
 #include "CppLexer.h"
 #include "CppParser.h"
 #include "../Qt/mainwindow.h"
-
 import SymbolTableModule;
 import SymbolTableVisitorModule;
 import SemanticAnalysis;
@@ -27,6 +26,7 @@ int main(int argc, char *argv[]) {
 
     MainWindow window;
 
+    /* * * * * * * * * * * * * Read File * * * * * * * * * * * * */
     std::ifstream fileStream("/home/incidence/Desktop/CompilerCpp/src/C++00/input.txt");
     if (!fileStream.is_open()) {
         qCritical() << "Semantic Error: Could not locate input.txt in the runtime folder!";
@@ -36,12 +36,16 @@ int main(int argc, char *argv[]) {
     }
 
     antlr4::ANTLRInputStream input(fileStream);
+
+    /* * * * * * * * * * * * * Lexer * * * * * * * * * * * * */
     CppLexer lexer(&input);
     antlr4::CommonTokenStream tokens(&lexer);
 
+    /* * * * * * * * * * * * * Parser * * * * * * * * * * * * */
     CppParser parser(&tokens);
     CppParser::TranslationUnitContext* tree = parser.translationUnit();
 
+    /* * * * * * * * * * * * * Syntax Check * * * * * * * * * * * * */
     if (parser.getNumberOfSyntaxErrors() > 0) {
         std::string syntaxErrorLog = "[Syntax Error] Found " + 
                                      std::to_string(parser.getNumberOfSyntaxErrors()) + 
@@ -52,8 +56,10 @@ int main(int argc, char *argv[]) {
         return app.exec();
     }
 
+    /* * * * * * * * * * * * * Log The Tree * * * * * * * * * * * * */
     CppZero::Logger::printPrettyAST(tree, parser.getRuleNames());
 
+    /* * * * * * * * * * * * * Symbol Table * * * * * * * * * * * * */
     CppZero::SymbolTable symbolTable;
     CppZero::Reports<CppZero::Report> symbol_table_reports;
     CppZero::SymbolTableVisitor visitor(symbolTable, symbol_table_reports);
@@ -67,6 +73,7 @@ int main(int argc, char *argv[]) {
         aggregatedLog += symbol_table_reports.toString() + "\n";
     }
 
+    /* * * * * * * * * * * * * Semantic Analysis * * * * * * * * * * * * */
     CppZero::Reports<CppZero::Report> semantic_analysis_reports;
     CppZero::SemanticAnalysis semantic_analysis(symbolTable, semantic_analysis_reports);
     semantic_analysis.analyse(tree);
@@ -76,7 +83,7 @@ int main(int argc, char *argv[]) {
             aggregatedLog += std::string(error.getMessage()) + "\n";
         }
     }
-
+    /* * * * * * * * * * * * * Optimization * * * * * * * * * * * * */
     std::cout << "\nStarting Optimization Pass...\n";
     CppZero::ASTOptimizer optimizer;
     std::any optimizationResult = optimizer.optimize(tree);
@@ -85,18 +92,23 @@ int main(int argc, char *argv[]) {
         std::cout << "Successfully folded expression value to: "
                   << std::any_cast<int>(optimizationResult) << "\n";
     }
-
+    /* * * * * * * * * * * * * Assembly * * * * * * * * * * * * */
     std::cout << "\nStarting Code Generation (Translating to x86-64 Assembly)...\n";
     CppZero::AssemblyGenerator generator(optimizationResult);
     std::string finalAssembly = generator.generateAssembly(tree);
 
     // Populate all interface fields safely
     window.setOptimizedAssemblyText(finalAssembly);
-    
+
     if (!aggregatedLog.empty()) {
         window.setErrorLogText(aggregatedLog);
     }
-
+    // TODO
+    // 1. set up SSA
+    // 2. display error logs at runtime in window
+    // 3. Deal with funciton and local vars identification
+    // 4. Go deeper on assembly
+    // 5. Make nice case of optimizations to boast for display
     // window.show();
     window.showMaximized();
     delete tree;
