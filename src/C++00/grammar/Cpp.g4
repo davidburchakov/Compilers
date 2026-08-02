@@ -162,21 +162,68 @@ WHITESPACE     : [ \t\r\n]+ -> skip ;
  */
 
 
-// 1. Entry Point: A program is a sequence of statements
 translationUnit
-    : (statement)* EOF
-    | RETURN expression
+    : translationUnitItem* EOF
     ;
 
-// 2. A statement can be a declaration OR a standard expression
+translationUnitItem
+    : functionDefinition
+    | functionDeclaration
+    | statement
+    ;
+
+functionDeclaration
+    : functionPrefixSpecifier*
+      returnType
+      functionName
+      LPAREN parameterList? RPAREN
+      functionPostfixSpecifier*
+      SEMICOLON
+    ;
+
+functionDefinition
+    : functionPrefixSpecifier*
+      returnType
+      functionName
+      LPAREN parameterList? RPAREN
+      functionPostfixSpecifier*
+      block
+    ;
+
+block
+    : LBRACE blockItem* RBRACE
+    ;
+
+blockItem
+    : statement
+    | returnStatement
+    ;
+
+returnStatement
+    : RETURN expression? SEMICOLON
+    ;
+
+parameterList
+    : parameter (COMMA parameter)*
+    ;
+
+parameter
+    : primitiveType IDENTIFIER
+    ;
+
+returnType
+    : primitiveType
+    ;
+
+functionName
+    : IDENTIFIER
+    ;
+
 statement
     : variableDeclaration     #VariableDeclarationStatement
     | expression SEMICOLON    #ExpressionStatement
     ;
 
-//functionDeclaration
-//    : functionPrefixSpecifier* returnType functionName '(' parameterList ')' functionPostfixSpecifier* ';'
-//    ;
 
 variableDeclaration
     : declarationModifiers primitiveType declaratorList SEMICOLON #VariableDeclarationClause

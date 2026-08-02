@@ -45,8 +45,14 @@ public:
     }
 
 protected:
+    /*
+     * protected is for things that are part of a class's extension interface:
+     * derived classes are allowed to customize behavior, but outside code should not directly access it.
+     *
+     * "This is an implementation detail, but subclasses are allowed to customize it."
+     */
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override {
-        if (change == ItemPositionChange && scene()) {
+        if (change == GraphicsItemChange::ItemPositionChange && scene() != nullptr) {
             QPointF newPos = value.toPointF();
             QPointF offset = newPos - pos();
 
