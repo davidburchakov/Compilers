@@ -1,833 +1,1094 @@
-//
-// Created by David Burchakov on 8/3/26.
-//
-
-// AssociativityTests.cpp
-
 #include <gtest/gtest.h>
 
+#include <functional>
 #include <string>
+#include <vector>
 
 #include "antlr4-runtime.h"
 #include "CppLexer.h"
 #include "CppParser.h"
 
-
 namespace {
+    using Expression = CppParser::ExpressionContext;
 
-struct ExpressionParseResult {
-    int syntaxErrors = 0;
-    CppParser::ExpressionContext* expression = nullptr;
-};
+    void expectValidExpression(const std::string &source, const std::function<void(Expression *)> &inspect) {
+        antlr4::ANTLRInputStream input(source);
+        CppLexer lexer(&input);
+        antlr4::CommonTokenStream tokens(&lexer);
+        CppParser parser(&tokens);
+        Expression *expression = parser.expression();
 
-ExpressionParseResult parseExpression(const std::string& source) {
-    antlr4::ANTLRInputStream input(source);
+        ASSERT_NE(expression, nullptr);
+        ASSERT_EQ(parser.getNumberOfSyntaxErrors(), 0) << "Expression failed to parse:\n" << source;
 
-    CppLexer lexer(&input);
+        inspect(expression);
+    }
 
-    antlr4::CommonTokenStream tokens(&lexer);
+    template<typename T>
+    T *expectType(Expression *expression) {
+        T *result = dynamic_cast<T *>(expression);
+        EXPECT_NE(result, nullptr);
+        return result;
+    }
 
-    CppParser parser(&tokens);
+    template<typename T>
+    T *expectChild(const std::vector<Expression *> &children, size_t index) {
+        if (index >= children.size()) {
+            ADD_FAILURE() << "Expected child at index " << index << ", but only " << children.size() <<
+ " children exist.";
+            return nullptr;
+        }
 
-    CppParser::ExpressionContext* expression =
-        parser.expression();
+        T *result = dynamic_cast<T *>(children[index]);
+        EXPECT_NE(result, nullptr);
+        return result;
+    }
 
-    return {
-        static_cast<int>(parser.getNumberOfSyntaxErrors()),
-        expression
-    };
-}
+    void expectVariable(Expression *expression, const std::string &name) {
+        auto *variable = expectType<CppParser::VariableIdentifierContext>(expression);
+        if (variable != nullptr) {
+            EXPECT_EQ(variable->getText(), name);
+        }
+    }
 
-void expectValidExpression(const std::string& source) {
-    const ExpressionParseResult result =
-        parseExpression(source);
+    void expectInteger(Expression *expression, const std::string &value) {
+        auto *integer = expectType<CppParser::IntLiteralContext>(expression);
+        if (integer != nullptr) {
+            EXPECT_EQ(integer->getText(), value);
+        }
+    }
 
-    ASSERT_NE(result.expression, nullptr);
-
-    EXPECT_EQ(result.syntaxErrors, 0)
-        << "Expression failed to parse:\n"
-        << source;
-}
-
+    template<typename T>
+    void expectBinary(Expression *expression) {
+        auto *binary = expectType<T>(expression);
+        if (binary != nullptr) {
+            EXPECT_EQ(binary->expression().size(), 2u);
+        }
+    }
 } // namespace
 
-
-// ============================================================
+// ============================================================================
 // Multiplicative precedence
-// ============================================================
+// ============================================================================
 
-TEST(AssociativityTests, MultiplicationBindsBeforeAddition)
-{
-    const auto result =
-        parseExpression("a + b * c");
+TEST(AssociativityTests, MultiplicationBindsBeforeAddition) {
+    expectValidExpression("a + b * c", [](Expression *expression) {
+        auto *addition = expectType<CppParser::AdditionContext>(expression);
+        if (addition == nullptr) return;
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        ASSERT_EQ(addition->expression().size(), 2u);
 
-    auto* addition =
-        dynamic_cast<CppParser::AdditionContext*>(
-            result.expression
-        );
+        expectVariable(addition->expression(0), "a");
+        auto *multiplication = expectChild<CppParser::MultiplicationContext>(addition->expression(), 1);
 
-    ASSERT_NE(addition, nullptr);
-
-    ASSERT_EQ(addition->expression().size(), 2u);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::VariableIdentifierContext*>(
-            addition->expression(0)
-        ),
-        nullptr
-    );
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::MultiplicationContext*>(
-            addition->expression(1)
-        ),
-        nullptr
-    );
+        if (multiplication != nullptr) {
+            ASSERT_EQ(multiplication->expression().size(), 2u);
+            expectVariable(multiplication->expression(0), "b");
+            expectVariable(multiplication->expression(1), "c");
+        }
+    });
 }
 
+TEST(AssociativityTests, DivisionBindsBeforeAddition) {
+    expectValidExpression("a + b / c", [](Expression *expression) {
+        auto *addition = expectType<CppParser::AdditionContext>(expression);
+        if (addition == nullptr) return;
 
-TEST(AssociativityTests, DivisionBindsBeforeAddition)
-{
-    const auto result =
-        parseExpression("a + b / c");
+        ASSERT_EQ(addition->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        expectVariable(addition->expression(0), "a");
+        auto *division = expectChild<CppParser::DivisionContext>(addition->expression(), 1);
 
-    auto* addition =
-        dynamic_cast<CppParser::AdditionContext*>(
-            result.expression
-        );
-
-    ASSERT_NE(addition, nullptr);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::DivisionContext*>(
-            addition->expression(1)
-        ),
-        nullptr
-    );
+        if (division != nullptr) {
+            ASSERT_EQ(division->expression().size(), 2u);
+            expectVariable(division->expression(0), "b");
+            expectVariable(division->expression(1), "c");
+        }
+    });
 }
 
+TEST(AssociativityTests, ModuloBindsBeforeAddition) {
+    expectValidExpression("a + b % c", [](Expression *expression) {
+        auto *addition = expectType<CppParser::AdditionContext>(expression);
+        if (addition == nullptr) return;
 
-TEST(AssociativityTests, AdditionBindsAfterMultiplication)
-{
-    const auto result =
-        parseExpression("a * b + c");
+        ASSERT_EQ(addition->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        expectVariable(addition->expression(0), "a");
+        auto *modulo = expectChild<CppParser::ModuloContext>(addition->expression(), 1);
 
-    auto* addition =
-        dynamic_cast<CppParser::AdditionContext*>(
-            result.expression
-        );
-
-    ASSERT_NE(addition, nullptr);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::MultiplicationContext*>(
-            addition->expression(0)
-        ),
-        nullptr
-    );
+        if (modulo != nullptr) {
+            ASSERT_EQ(modulo->expression().size(), 2u);
+            expectVariable(modulo->expression(0), "b");
+            expectVariable(modulo->expression(1), "c");
+        }
+    });
 }
 
+TEST(AssociativityTests, MultiplicationBindsBeforeSubtraction) {
+    expectValidExpression("a - b * c", [](Expression *expression) {
+        auto *subtraction = expectType<CppParser::SubtractionContext>(expression);
+        if (subtraction == nullptr) return;
 
-// ============================================================
-// Left associativity
-// ============================================================
+        ASSERT_EQ(subtraction->expression().size(), 2u);
 
-TEST(AssociativityTests, AdditionIsLeftAssociative)
-{
-    const auto result =
-        parseExpression("a + b + c");
+        expectVariable(subtraction->expression(0), "a");
+        auto *multiplication = expectChild<CppParser::MultiplicationContext>(subtraction->expression(), 1);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
-
-    auto* outer =
-        dynamic_cast<CppParser::AdditionContext*>(
-            result.expression
-        );
-
-    ASSERT_NE(outer, nullptr);
-
-    ASSERT_EQ(outer->expression().size(), 2u);
-
-    auto* inner =
-        dynamic_cast<CppParser::AdditionContext*>(
-            outer->expression(0)
-        );
-
-    ASSERT_NE(inner, nullptr);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::VariableIdentifierContext*>(
-            outer->expression(1)
-        ),
-        nullptr
-    );
+        if (multiplication != nullptr) {
+            expectVariable(multiplication->expression(0), "b");
+            expectVariable(multiplication->expression(1), "c");
+        }
+    });
 }
 
+TEST(AssociativityTests, MultiplicationBindsBeforeShift) {
+    expectValidExpression("a << b * c", [](Expression *expression) {
+        auto *shift = expectType<CppParser::BitwiseLeftShiftContext>(expression);
+        if (shift == nullptr) return;
 
-TEST(AssociativityTests, SubtractionIsLeftAssociative)
-{
-    const auto result =
-        parseExpression("a - b - c");
+        ASSERT_EQ(shift->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        expectVariable(shift->expression(0), "a");
+        auto *multiplication = expectChild<CppParser::MultiplicationContext>(shift->expression(), 1);
 
-    auto* outer =
-        dynamic_cast<CppParser::SubtractionContext*>(
-            result.expression
-        );
-
-    ASSERT_NE(outer, nullptr);
-
-    auto* inner =
-        dynamic_cast<CppParser::SubtractionContext*>(
-            outer->expression(0)
-        );
-
-    ASSERT_NE(inner, nullptr);
+        if (multiplication != nullptr) {
+            expectVariable(multiplication->expression(0), "b");
+            expectVariable(multiplication->expression(1), "c");
+        }
+    });
 }
 
+// ============================================================================
+// Multiplication / division / modulo left associativity
+// ============================================================================
 
-TEST(AssociativityTests, MultiplicationIsLeftAssociative)
-{
-    const auto result =
-        parseExpression("a * b * c");
+TEST(AssociativityTests, MultiplicationIsLeftAssociative) {
+    expectValidExpression("a * b * c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::MultiplicationContext>(expression);
+        if (outer == nullptr) return;
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    auto* outer =
-        dynamic_cast<CppParser::MultiplicationContext*>(
-            result.expression
-        );
+        auto *inner = expectChild<CppParser::MultiplicationContext>(outer->expression(), 0);
 
-    ASSERT_NE(outer, nullptr);
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
 
-    auto* inner =
-        dynamic_cast<CppParser::MultiplicationContext*>(
-            outer->expression(0)
-        );
-
-    ASSERT_NE(inner, nullptr);
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, DivisionIsLeftAssociative) {
+    expectValidExpression("a / b / c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::DivisionContext>(expression);
+        if (outer == nullptr) return;
 
-TEST(AssociativityTests, DivisionIsLeftAssociative)
-{
-    const auto result =
-        parseExpression("a / b / c");
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        auto *inner = expectChild<CppParser::DivisionContext>(outer->expression(), 0);
 
-    auto* outer =
-        dynamic_cast<CppParser::DivisionContext*>(
-            result.expression
-        );
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
 
-    ASSERT_NE(outer, nullptr);
-
-    auto* inner =
-        dynamic_cast<CppParser::DivisionContext*>(
-            outer->expression(0)
-        );
-
-    ASSERT_NE(inner, nullptr);
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, ModuloIsLeftAssociative) {
+    expectValidExpression("a % b % c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::ModuloContext>(expression);
+        if (outer == nullptr) return;
 
-// ============================================================
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *inner = expectChild<CppParser::ModuloContext>(outer->expression(), 0);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+// ============================================================================
+// Addition / subtraction left associativity
+// ============================================================================
+
+TEST(AssociativityTests, AdditionIsLeftAssociative) {
+    expectValidExpression("a + b + c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AdditionContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *inner = expectChild<CppParser::AdditionContext>(outer->expression(), 0);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+TEST(AssociativityTests, SubtractionIsLeftAssociative) {
+    expectValidExpression("a - b - c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::SubtractionContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *inner = expectChild<CppParser::SubtractionContext>(outer->expression(), 0);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+// ============================================================================
+// Mixed multiplicative operators
+// ============================================================================
+
+TEST(AssociativityTests, MultiplicationAndDivisionAreSamePrecedence) {
+    expectValidExpression("a * b / c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::DivisionContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *inner = expectChild<CppParser::MultiplicationContext>(outer->expression(), 0);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+TEST(AssociativityTests, DivisionAndMultiplicationAreSamePrecedence) {
+    expectValidExpression("a / b * c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::MultiplicationContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *inner = expectChild<CppParser::DivisionContext>(outer->expression(), 0);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+TEST(AssociativityTests, MultiplicationAndModuloAreSamePrecedence) {
+    expectValidExpression("a * b % c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::ModuloContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *inner = expectChild<CppParser::MultiplicationContext>(outer->expression(), 0);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+TEST(AssociativityTests, DivisionAndModuloAreSamePrecedence) {
+    expectValidExpression("a / b % c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::ModuloContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *inner = expectChild<CppParser::DivisionContext>(outer->expression(), 0);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+// ============================================================================
+// Addition/subtraction mixed associativity
+// ============================================================================
+
+TEST(AssociativityTests, AdditionAndSubtractionAreSamePrecedence) {
+    expectValidExpression("a + b - c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::SubtractionContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *inner = expectChild<CppParser::AdditionContext>(outer->expression(), 0);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+TEST(AssociativityTests, SubtractionAndAdditionAreSamePrecedence) {
+    expectValidExpression("a - b + c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AdditionContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *inner = expectChild<CppParser::SubtractionContext>(outer->expression(), 0);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+// ============================================================================
+// Multiplicative vs additive precedence
+// ============================================================================
+
+TEST(AssociativityTests, AdditionHasLowerPrecedenceThanMultiplication) {
+    expectValidExpression("a * b + c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AdditionContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *multiplication = expectChild<CppParser::MultiplicationContext>(outer->expression(), 0);
+
+        if (multiplication != nullptr) {
+            expectVariable(multiplication->expression(0), "a");
+            expectVariable(multiplication->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+TEST(AssociativityTests, SubtractionHasLowerPrecedenceThanDivision) {
+    expectValidExpression("a / b - c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::SubtractionContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *division = expectChild<CppParser::DivisionContext>(outer->expression(), 0);
+
+        if (division != nullptr) {
+            expectVariable(division->expression(0), "a");
+            expectVariable(division->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+TEST(AssociativityTests, ModuloHasHigherPrecedenceThanAddition) {
+    expectValidExpression("a + b % c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AdditionContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *modulo = expectChild<CppParser::ModuloContext>(outer->expression(), 1);
+
+        if (modulo != nullptr) {
+            expectVariable(modulo->expression(0), "b");
+            expectVariable(modulo->expression(1), "c");
+        }
+
+        expectVariable(outer->expression(0), "a");
+    });
+}
+
+// ============================================================================
 // Shift precedence
-// ============================================================
+// ============================================================================
 
-TEST(AssociativityTests, AdditionBindsBeforeLeftShift)
-{
-    const auto result =
-        parseExpression("a + b << c");
+TEST(AssociativityTests, ShiftIsLeftAssociative) {
+    expectValidExpression("a << b << c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::BitwiseLeftShiftContext>(expression);
+        if (outer == nullptr) return;
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    auto* shift =
-        dynamic_cast<CppParser::BitwiseLeftShiftContext*>(
-            result.expression
-        );
+        auto *inner = expectChild<CppParser::BitwiseLeftShiftContext>(outer->expression(), 0);
 
-    ASSERT_NE(shift, nullptr);
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
 
-    EXPECT_NE(
-        dynamic_cast<CppParser::AdditionContext*>(
-            shift->expression(0)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, RightShiftIsLeftAssociative) {
+    expectValidExpression("a >> b >> c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::BitwiseRightShiftContext>(expression);
+        if (outer == nullptr) return;
 
-TEST(AssociativityTests, AdditionBindsBeforeRightShift)
-{
-    const auto result =
-        parseExpression("a + b >> c");
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        auto *inner = expectChild<CppParser::BitwiseRightShiftContext>(outer->expression(), 0);
 
-    auto* shift =
-        dynamic_cast<CppParser::BitwiseRightShiftContext*>(
-            result.expression
-        );
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
 
-    ASSERT_NE(shift, nullptr);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::AdditionContext*>(
-            shift->expression(0)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, AdditionBindsBeforeShift) {
+    expectValidExpression("a + b << c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::BitwiseLeftShiftContext>(expression);
+        if (outer == nullptr) return;
 
-// ============================================================
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *addition = expectChild<CppParser::AdditionContext>(outer->expression(), 0);
+
+        if (addition != nullptr) {
+            expectVariable(addition->expression(0), "a");
+            expectVariable(addition->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+TEST(AssociativityTests, ShiftBindsBeforeRelationalComparison) {
+    expectValidExpression("a << b < c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::LessThanContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *shift = expectChild<CppParser::BitwiseLeftShiftContext>(outer->expression(), 0);
+
+        if (shift != nullptr) {
+            expectVariable(shift->expression(0), "a");
+            expectVariable(shift->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+// ============================================================================
 // Relational precedence
-// ============================================================
+// ============================================================================
 
-TEST(AssociativityTests, RelationalBindsAfterArithmetic)
-{
-    const auto result =
-        parseExpression("a + b < c * d");
+TEST(AssociativityTests, RelationalOperatorsAreLeftAssociative) {
+    expectValidExpression("a < b < c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::LessThanContext>(expression);
+        if (outer == nullptr) return;
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    auto* less =
-        dynamic_cast<CppParser::LessThanContext*>(
-            result.expression
-        );
+        auto *inner = expectChild<CppParser::LessThanContext>(outer->expression(), 0);
 
-    ASSERT_NE(less, nullptr);
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
 
-    EXPECT_NE(
-        dynamic_cast<CppParser::AdditionContext*>(
-            less->expression(0)
-        ),
-        nullptr
-    );
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::MultiplicationContext*>(
-            less->expression(1)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, GreaterThanOperatorsAreLeftAssociative) {
+    expectValidExpression("a > b > c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::GreaterThanContext>(expression);
+        if (outer == nullptr) return;
 
-TEST(AssociativityTests, RelationalOperatorsAreLeftAssociative)
-{
-    const auto result =
-        parseExpression("a < b < c");
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        auto *inner = expectChild<CppParser::GreaterThanContext>(outer->expression(), 0);
 
-    auto* outer =
-        dynamic_cast<CppParser::LessThanContext*>(
-            result.expression
-        );
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
 
-    ASSERT_NE(outer, nullptr);
-
-    auto* inner =
-        dynamic_cast<CppParser::LessThanContext*>(
-            outer->expression(0)
-        );
-
-    ASSERT_NE(inner, nullptr);
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
-
-// ============================================================
+// ============================================================================
 // Equality precedence
-// ============================================================
+// ============================================================================
 
-TEST(AssociativityTests, EqualityBindsAfterRelational)
-{
-    const auto result =
-        parseExpression("a < b == c < d");
+TEST(AssociativityTests, EqualityBindsAfterRelational) {
+    expectValidExpression("a < b == c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::EqualityAttemptContext>(expression);
+        if (outer == nullptr) return;
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    auto* equality =
-        dynamic_cast<CppParser::EqualityAttemptContext*>(
-            result.expression
-        );
+        auto *lessThan = expectChild<CppParser::LessThanContext>(outer->expression(), 0);
 
-    ASSERT_NE(equality, nullptr);
+        if (lessThan != nullptr) {
+            expectVariable(lessThan->expression(0), "a");
+            expectVariable(lessThan->expression(1), "b");
+        }
 
-    EXPECT_NE(
-        dynamic_cast<CppParser::LessThanContext*>(
-            equality->expression(0)
-        ),
-        nullptr
-    );
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::LessThanContext*>(
-            equality->expression(1)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, InequalityBindsAfterRelational) {
+    expectValidExpression("a > b != c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::InequalityAttemptContext>(expression);
+        if (outer == nullptr) return;
 
-// ============================================================
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *greaterThan = expectChild<CppParser::GreaterThanContext>(outer->expression(), 0);
+
+        if (greaterThan != nullptr) {
+            expectVariable(greaterThan->expression(0), "a");
+            expectVariable(greaterThan->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+// ============================================================================
 // Bitwise precedence
-// ============================================================
+// ============================================================================
 
-TEST(AssociativityTests, BitwiseAndBindsAfterEquality)
-{
-    const auto result =
-        parseExpression("a == b & c");
+TEST(AssociativityTests, BitwiseAndIsLeftAssociative) {
+    expectValidExpression("a & b & c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::BitwiseAndContext>(expression);
+        if (outer == nullptr) return;
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    auto* bitwiseAnd =
-        dynamic_cast<CppParser::BitwiseAndContext*>(
-            result.expression
-        );
+        auto *inner = expectChild<CppParser::BitwiseAndContext>(outer->expression(), 0);
 
-    ASSERT_NE(bitwiseAnd, nullptr);
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
 
-    EXPECT_NE(
-        dynamic_cast<CppParser::EqualityAttemptContext*>(
-            bitwiseAnd->expression(0)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, BitwiseXorIsLeftAssociative) {
+    expectValidExpression("a ^ b ^ c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::BitwiseXorContext>(expression);
+        if (outer == nullptr) return;
 
-TEST(AssociativityTests, BitwiseXorBindsAfterBitwiseAnd)
-{
-    const auto result =
-        parseExpression("a & b ^ c");
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        auto *inner = expectChild<CppParser::BitwiseXorContext>(outer->expression(), 0);
 
-    auto* xorExpression =
-        dynamic_cast<CppParser::BitwiseXorContext*>(
-            result.expression
-        );
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
 
-    ASSERT_NE(xorExpression, nullptr);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::BitwiseAndContext*>(
-            xorExpression->expression(0)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, BitwiseOrIsLeftAssociative) {
+    expectValidExpression("a | b | c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::BitwiseOrContext>(expression);
+        if (outer == nullptr) return;
 
-TEST(AssociativityTests, BitwiseOrBindsAfterBitwiseXor)
-{
-    const auto result =
-        parseExpression("a ^ b | c");
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        auto *inner = expectChild<CppParser::BitwiseOrContext>(outer->expression(), 0);
 
-    auto* orExpression =
-        dynamic_cast<CppParser::BitwiseOrContext*>(
-            result.expression
-        );
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
 
-    ASSERT_NE(orExpression, nullptr);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::BitwiseXorContext*>(
-            orExpression->expression(0)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, BitwiseAndBindsBeforeBitwiseXor) {
+    expectValidExpression("a & b ^ c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::BitwiseXorContext>(expression);
+        if (outer == nullptr) return;
 
-// ============================================================
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *bitwiseAnd = expectChild<CppParser::BitwiseAndContext>(outer->expression(), 0);
+
+        if (bitwiseAnd != nullptr) {
+            expectVariable(bitwiseAnd->expression(0), "a");
+            expectVariable(bitwiseAnd->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+TEST(AssociativityTests, BitwiseXorBindsBeforeBitwiseOr) {
+    expectValidExpression("a ^ b | c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::BitwiseOrContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *bitwiseXor = expectChild<CppParser::BitwiseXorContext>(outer->expression(), 0);
+
+        if (bitwiseXor != nullptr) {
+            expectVariable(bitwiseXor->expression(0), "a");
+            expectVariable(bitwiseXor->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+// ============================================================================
 // Logical precedence
-// ============================================================
+// ============================================================================
 
-TEST(AssociativityTests, LogicalAndBindsBeforeLogicalOr)
-{
-    const auto result =
-        parseExpression("a || b && c");
+TEST(AssociativityTests, LogicalAndIsLeftAssociative) {
+    expectValidExpression("a && b && c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::LogicalAndContext>(expression);
+        if (outer == nullptr) return;
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    auto* logicalOr =
-        dynamic_cast<CppParser::LogicalOrContext*>(
-            result.expression
-        );
+        auto *inner = expectChild<CppParser::LogicalAndContext>(outer->expression(), 0);
 
-    ASSERT_NE(logicalOr, nullptr);
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
 
-    EXPECT_NE(
-        dynamic_cast<CppParser::LogicalAndContext*>(
-            logicalOr->expression(1)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, LogicalOrIsLeftAssociative) {
+    expectValidExpression("a || b || c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::LogicalOrContext>(expression);
+        if (outer == nullptr) return;
 
-TEST(AssociativityTests, LogicalAndIsLeftAssociative)
-{
-    const auto result =
-        parseExpression("a && b && c");
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        auto *inner = expectChild<CppParser::LogicalOrContext>(outer->expression(), 0);
 
-    auto* outer =
-        dynamic_cast<CppParser::LogicalAndContext*>(
-            result.expression
-        );
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "a");
+            expectVariable(inner->expression(1), "b");
+        }
 
-    ASSERT_NE(outer, nullptr);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::LogicalAndContext*>(
-            outer->expression(0)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, LogicalAndBindsBeforeLogicalOr) {
+    expectValidExpression("a && b || c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::LogicalOrContext>(expression);
+        if (outer == nullptr) return;
 
-TEST(AssociativityTests, LogicalOrIsLeftAssociative)
-{
-    const auto result =
-        parseExpression("a || b || c");
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        auto *logicalAnd = expectChild<CppParser::LogicalAndContext>(outer->expression(), 0);
 
-    auto* outer =
-        dynamic_cast<CppParser::LogicalOrContext*>(
-            result.expression
-        );
+        if (logicalAnd != nullptr) {
+            expectVariable(logicalAnd->expression(0), "a");
+            expectVariable(logicalAnd->expression(1), "b");
+        }
 
-    ASSERT_NE(outer, nullptr);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::LogicalOrContext*>(
-            outer->expression(0)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, BitwiseOrBindsBeforeLogicalAnd) {
+    expectValidExpression("a | b && c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::LogicalAndContext>(expression);
+        if (outer == nullptr) return;
 
-// ============================================================
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *bitwiseOr = expectChild<CppParser::BitwiseOrContext>(outer->expression(), 0);
+
+        if (bitwiseOr != nullptr) {
+            expectVariable(bitwiseOr->expression(0), "a");
+            expectVariable(bitwiseOr->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+// ============================================================================
 // Assignment associativity
-// ============================================================
+// ============================================================================
 
-TEST(AssociativityTests, AssignmentIsRightAssociative)
-{
-    const auto result =
-        parseExpression("a = b = c");
+TEST(AssociativityTests, AssignmentIsRightAssociative) {
+    expectValidExpression("a = b = c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AssignmentContext>(expression);
+        if (outer == nullptr) return;
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    auto* outer =
-        dynamic_cast<CppParser::AssignmentContext*>(
-            result.expression
-        );
+        expectVariable(outer->expression(0), "a");
 
-    ASSERT_NE(outer, nullptr);
+        auto *inner = expectChild<CppParser::AssignmentContext>(outer->expression(), 1);
 
-    ASSERT_EQ(outer->expression().size(), 2u);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::VariableIdentifierContext*>(
-            outer->expression(0)
-        ),
-        nullptr
-    );
-
-    auto* inner =
-        dynamic_cast<CppParser::AssignmentContext*>(
-            outer->expression(1)
-        );
-
-    ASSERT_NE(inner, nullptr);
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "b");
+            expectVariable(inner->expression(1), "c");
+        }
+    });
 }
 
+TEST(AssociativityTests, MultiplicationAssignmentIsRightAssociative) {
+    expectValidExpression("a *= b *= c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AssignmentMultContext>(expression);
+        if (outer == nullptr) return;
 
-TEST(AssociativityTests, MultiplyAssignmentIsRightAssociative)
-{
-    const auto result =
-        parseExpression("a *= b *= c");
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        expectVariable(outer->expression(0), "a");
 
-    auto* outer =
-        dynamic_cast<CppParser::AssignmentMultContext*>(
-            result.expression
-        );
+        auto *inner = expectChild<CppParser::AssignmentMultContext>(outer->expression(), 1);
 
-    ASSERT_NE(outer, nullptr);
-
-    auto* inner =
-        dynamic_cast<CppParser::AssignmentMultContext*>(
-            outer->expression(1)
-        );
-
-    ASSERT_NE(inner, nullptr);
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "b");
+            expectVariable(inner->expression(1), "c");
+        }
+    });
 }
 
+TEST(AssociativityTests, DivisionAssignmentIsRightAssociative) {
+    expectValidExpression("a /= b /= c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AssignmentDivisionContext>(expression);
+        if (outer == nullptr) return;
 
-TEST(AssociativityTests, PlusAssignmentIsRightAssociative)
-{
-    const auto result =
-        parseExpression("a += b += c");
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        expectVariable(outer->expression(0), "a");
 
-    auto* outer =
-        dynamic_cast<CppParser::AssignmentPlusContext*>(
-            result.expression
-        );
+        auto *inner = expectChild<CppParser::AssignmentDivisionContext>(outer->expression(), 1);
 
-    ASSERT_NE(outer, nullptr);
-
-    auto* inner =
-        dynamic_cast<CppParser::AssignmentPlusContext*>(
-            outer->expression(1)
-        );
-
-    ASSERT_NE(inner, nullptr);
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "b");
+            expectVariable(inner->expression(1), "c");
+        }
+    });
 }
 
+TEST(AssociativityTests, AdditionAssignmentIsRightAssociative) {
+    expectValidExpression("a += b += c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AssignmentPlusContext>(expression);
+        if (outer == nullptr) return;
 
-TEST(AssociativityTests, MinusAssignmentIsRightAssociative)
-{
-    const auto result =
-        parseExpression("a -= b -= c");
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        expectVariable(outer->expression(0), "a");
 
-    auto* outer =
-        dynamic_cast<CppParser::AssignmentMinusContext*>(
-            result.expression
-        );
+        auto *inner = expectChild<CppParser::AssignmentPlusContext>(outer->expression(), 1);
 
-    ASSERT_NE(outer, nullptr);
-
-    auto* inner =
-        dynamic_cast<CppParser::AssignmentMinusContext*>(
-            outer->expression(1)
-        );
-
-    ASSERT_NE(inner, nullptr);
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "b");
+            expectVariable(inner->expression(1), "c");
+        }
+    });
 }
 
+TEST(AssociativityTests, SubtractionAssignmentIsRightAssociative) {
+    expectValidExpression("a -= b -= c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AssignmentMinusContext>(expression);
+        if (outer == nullptr) return;
 
-// ============================================================
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        expectVariable(outer->expression(0), "a");
+
+        auto *inner = expectChild<CppParser::AssignmentMinusContext>(outer->expression(), 1);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "b");
+            expectVariable(inner->expression(1), "c");
+        }
+    });
+}
+
+TEST(AssociativityTests, AndAssignmentIsRightAssociative) {
+    expectValidExpression("a &= b &= c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AssignmentAndContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        expectVariable(outer->expression(0), "a");
+
+        auto *inner = expectChild<CppParser::AssignmentAndContext>(outer->expression(), 1);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "b");
+            expectVariable(inner->expression(1), "c");
+        }
+    });
+}
+
+TEST(AssociativityTests, OrAssignmentIsRightAssociative) {
+    expectValidExpression("a |= b |= c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AssignmentOrContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        expectVariable(outer->expression(0), "a");
+
+        auto *inner = expectChild<CppParser::AssignmentOrContext>(outer->expression(), 1);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "b");
+            expectVariable(inner->expression(1), "c");
+        }
+    });
+}
+
+TEST(AssociativityTests, XorAssignmentIsRightAssociative) {
+    expectValidExpression("a ^= b ^= c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AssignmentXorContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        expectVariable(outer->expression(0), "a");
+
+        auto *inner = expectChild<CppParser::AssignmentXorContext>(outer->expression(), 1);
+
+        if (inner != nullptr) {
+            expectVariable(inner->expression(0), "b");
+            expectVariable(inner->expression(1), "c");
+        }
+    });
+}
+
+// ============================================================================
+// Assignment has lower precedence than logical operators
+// ============================================================================
+
+TEST(AssociativityTests, LogicalOrBindsBeforeAssignment) {
+    expectValidExpression("a || b = c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AssignmentContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *logicalOr = expectChild<CppParser::LogicalOrContext>(outer->expression(), 0);
+
+        if (logicalOr != nullptr) {
+            expectVariable(logicalOr->expression(0), "a");
+            expectVariable(logicalOr->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+TEST(AssociativityTests, AdditionBindsBeforeAssignment) {
+    expectValidExpression("a + b = c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AssignmentContext>(expression);
+        if (outer == nullptr) return;
+
+        ASSERT_EQ(outer->expression().size(), 2u);
+
+        auto *addition = expectChild<CppParser::AdditionContext>(outer->expression(), 0);
+
+        if (addition != nullptr) {
+            expectVariable(addition->expression(0), "a");
+            expectVariable(addition->expression(1), "b");
+        }
+
+        expectVariable(outer->expression(1), "c");
+    });
+}
+
+// ============================================================================
 // Parentheses override precedence
-// ============================================================
+// ============================================================================
 
-TEST(AssociativityTests, ParenthesesOverrideAdditionAndMultiplication)
-{
-    const auto result =
-        parseExpression("(a + b) * c");
+TEST(AssociativityTests, ParenthesesOverrideMultiplicationPrecedence) {
+    expectValidExpression("(a + b) * c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::MultiplicationContext>(expression);
+        if (outer == nullptr) return;
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    auto* multiplication =
-        dynamic_cast<CppParser::MultiplicationContext*>(
-            result.expression
-        );
+        auto *parent = expectChild<CppParser::ParentExpressionContext>(outer->expression(), 0);
 
-    ASSERT_NE(multiplication, nullptr);
+        if (parent != nullptr) {
+            auto *addition = expectType<CppParser::AdditionContext>(parent->expression());
+            if (addition != nullptr) {
+                expectVariable(addition->expression(0), "a");
+                expectVariable(addition->expression(1), "b");
+            }
+        }
 
-    EXPECT_NE(
-        dynamic_cast<CppParser::ParentExpressionContext*>(
-            multiplication->expression(0)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+TEST(AssociativityTests, ParenthesesOverrideAdditionPrecedence) {
+    expectValidExpression("a * (b + c)", [](Expression *expression) {
+        auto *outer = expectType<CppParser::MultiplicationContext>(expression);
+        if (outer == nullptr) return;
 
-TEST(AssociativityTests, ParenthesesCanForceAdditionRoot)
-{
-    const auto result =
-        parseExpression("a * (b + c)");
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        expectVariable(outer->expression(0), "a");
 
-    auto* multiplication =
-        dynamic_cast<CppParser::MultiplicationContext*>(
-            result.expression
-        );
+        auto *parent = expectChild<CppParser::ParentExpressionContext>(outer->expression(), 1);
 
-    ASSERT_NE(multiplication, nullptr);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::ParentExpressionContext*>(
-            multiplication->expression(1)
-        ),
-        nullptr
-    );
+        if (parent != nullptr) {
+            auto *addition = expectType<CppParser::AdditionContext>(parent->expression());
+            if (addition != nullptr) {
+                expectVariable(addition->expression(0), "b");
+                expectVariable(addition->expression(1), "c");
+            }
+        }
+    });
 }
 
+TEST(AssociativityTests, ParenthesesOverrideAssignmentAssociativity) {
+    expectValidExpression("(a = b) = c", [](Expression *expression) {
+        auto *outer = expectType<CppParser::AssignmentContext>(expression);
+        if (outer == nullptr) return;
 
-// ============================================================
-// Unary precedence
-// ============================================================
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-TEST(AssociativityTests, UnaryMinusBindsBeforeMultiplication)
-{
-    const auto result =
-        parseExpression("-a * b");
+        auto *parent = expectChild<CppParser::ParentExpressionContext>(outer->expression(), 0);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        if (parent != nullptr) {
+            auto *assignment = expectType<CppParser::AssignmentContext>(parent->expression());
+            if (assignment != nullptr) {
+                expectVariable(assignment->expression(0), "a");
+                expectVariable(assignment->expression(1), "b");
+            }
+        }
 
-    auto* multiplication =
-        dynamic_cast<CppParser::MultiplicationContext*>(
-            result.expression
-        );
-
-    ASSERT_NE(multiplication, nullptr);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::UnaryMinusContext*>(
-            multiplication->expression(0)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "c");
+    });
 }
 
+// ============================================================================
+// Deep precedence chains
+// ============================================================================
 
-TEST(AssociativityTests, LogicalNotBindsBeforeLogicalAnd)
-{
-    const auto result =
-        parseExpression("!a && b");
+TEST(AssociativityTests, FullArithmeticPrecedenceChain) {
+    expectValidExpression("a + b * c - d / e", [](Expression *expression) {
+        auto *subtraction = expectType<CppParser::SubtractionContext>(expression);
+        if (subtraction == nullptr) return;
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        ASSERT_EQ(subtraction->expression().size(), 2u);
 
-    auto* logicalAnd =
-        dynamic_cast<CppParser::LogicalAndContext*>(
-            result.expression
-        );
+        auto *addition = expectChild<CppParser::AdditionContext>(subtraction->expression(), 0);
 
-    ASSERT_NE(logicalAnd, nullptr);
+        if (addition != nullptr) {
+            expectVariable(addition->expression(0), "a");
 
-    EXPECT_NE(
-        dynamic_cast<CppParser::LogicalNotContext*>(
-            logicalAnd->expression(0)
-        ),
-        nullptr
-    );
+            auto *multiplication = expectChild<CppParser::MultiplicationContext>(addition->expression(), 1);
+
+            if (multiplication != nullptr) {
+                expectVariable(multiplication->expression(0), "b");
+                expectVariable(multiplication->expression(1), "c");
+            }
+        }
+
+        auto *division = expectChild<CppParser::DivisionContext>(subtraction->expression(), 1);
+
+        if (division != nullptr) {
+            expectVariable(division->expression(0), "d");
+            expectVariable(division->expression(1), "e");
+        }
+    });
 }
 
+TEST(AssociativityTests, FullLogicalPrecedenceChain) {
+    expectValidExpression("a || b && c || d", [](Expression *expression) {
+        auto *outer = expectType<CppParser::LogicalOrContext>(expression);
+        if (outer == nullptr) return;
 
-// ============================================================
-// Postfix precedence
-// ============================================================
+        ASSERT_EQ(outer->expression().size(), 2u);
 
-TEST(AssociativityTests, FunctionCallBindsTightly)
-{
-    const auto result =
-        parseExpression("foo(a) + b");
+        auto *left = expectChild<CppParser::LogicalOrContext>(outer->expression(), 0);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        if (left != nullptr) {
+            expectVariable(left->expression(0), "a");
 
-    auto* addition =
-        dynamic_cast<CppParser::AdditionContext*>(
-            result.expression
-        );
+            auto *logicalAnd = expectChild<CppParser::LogicalAndContext>(left->expression(), 1);
 
-    ASSERT_NE(addition, nullptr);
+            if (logicalAnd != nullptr) {
+                expectVariable(logicalAnd->expression(0), "b");
+                expectVariable(logicalAnd->expression(1), "c");
+            }
+        }
 
-    EXPECT_NE(
-        dynamic_cast<CppParser::FunctionCallContext*>(
-            addition->expression(0)
-        ),
-        nullptr
-    );
+        expectVariable(outer->expression(1), "d");
+    });
 }
 
+TEST(AssociativityTests, FullBitwisePrecedenceChain) {
+    expectValidExpression("a & b ^ c | d", [](Expression *expression) {
+        auto *bitwiseOr = expectType<CppParser::BitwiseOrContext>(expression);
+        if (bitwiseOr == nullptr) return;
 
-TEST(AssociativityTests, ArraySubscriptBindsTightly)
-{
-    const auto result =
-        parseExpression("a[i] + b");
+        ASSERT_EQ(bitwiseOr->expression().size(), 2u);
 
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
+        auto *bitwiseXor = expectChild<CppParser::BitwiseXorContext>(bitwiseOr->expression(), 0);
 
-    auto* addition =
-        dynamic_cast<CppParser::AdditionContext*>(
-            result.expression
-        );
+        if (bitwiseXor != nullptr) {
+            auto *bitwiseAnd = expectChild<CppParser::BitwiseAndContext>(bitwiseXor->expression(), 0);
 
-    ASSERT_NE(addition, nullptr);
+            if (bitwiseAnd != nullptr) {
+                expectVariable(bitwiseAnd->expression(0), "a");
+                expectVariable(bitwiseAnd->expression(1), "b");
+            }
 
-    EXPECT_NE(
-        dynamic_cast<CppParser::ArraySubscriptContext*>(
-            addition->expression(0)
-        ),
-        nullptr
-    );
-}
+            expectVariable(bitwiseXor->expression(1), "c");
+        }
 
-
-TEST(AssociativityTests, MemberAccessBindsTightly)
-{
-    const auto result =
-        parseExpression("object.value + x");
-
-    ASSERT_EQ(result.syntaxErrors, 0);
-    ASSERT_NE(result.expression, nullptr);
-
-    auto* addition =
-        dynamic_cast<CppParser::AdditionContext*>(
-            result.expression
-        );
-
-    ASSERT_NE(addition, nullptr);
-
-    EXPECT_NE(
-        dynamic_cast<CppParser::MemberAccessDotContext*>(
-            addition->expression(0)
-        ),
-        nullptr
-    );
+        expectVariable(bitwiseOr->expression(1), "d");
+    });
 }
