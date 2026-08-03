@@ -11,8 +11,11 @@ include(GoogleTest)
 # ============================================================
 
 add_executable(
-GrammarTests
-${CMAKE_CURRENT_SOURCE_DIR}/GrammarTests/GrammarTest.cpp
+        GrammarTests
+#        GrammarTests/GrammarTestUtils.h
+        GrammarTests/GrammarGeneralTests.cpp
+        GrammarTests/FunctionTests.cpp
+        GrammarTests/AssociativityTests.cpp
 )
 
 # ------------------------------------------------------------
@@ -34,10 +37,10 @@ ${CMAKE_CURRENT_SOURCE_DIR}/GrammarTests/GrammarTest.cpp
 # ------------------------------------------------------------
 
 set_target_properties(
-GrammarTests
-PROPERTIES
-RUNTIME_OUTPUT_DIRECTORY
-${CMAKE_BINARY_DIR}/bin
+        GrammarTests
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY
+        ${CMAKE_BINARY_DIR}/bin
 )
 
 # ------------------------------------------------------------
@@ -45,9 +48,9 @@ ${CMAKE_BINARY_DIR}/bin
 # ------------------------------------------------------------
 
 target_compile_features(
-GrammarTests
-PRIVATE
-cxx_std_23
+        GrammarTests
+        PRIVATE
+        cxx_std_23
 )
 
 # ------------------------------------------------------------
@@ -67,10 +70,10 @@ cxx_std_23
 # ------------------------------------------------------------
 
 target_link_libraries(
-GrammarTests
-PRIVATE
-CompilerCore
-GTest::gtest_main
+        GrammarTests
+        PRIVATE
+        CompilerCore
+        GTest::gtest_main
 )
 
 # ------------------------------------------------------------
@@ -78,15 +81,15 @@ GTest::gtest_main
 # ------------------------------------------------------------
 
 target_compile_definitions(
-GrammarTests
-PRIVATE
-ANTLR4CPP_USING_ABSEIL=0
+        GrammarTests
+        PRIVATE
+        ANTLR4CPP_USING_ABSEIL=0
 )
 
 target_compile_options(
-GrammarTests
-PRIVATE
--Wno-deprecated-declarations
+        GrammarTests
+        PRIVATE
+        -Wno-deprecated-declarations
 )
 
 # ------------------------------------------------------------
@@ -94,5 +97,5 @@ PRIVATE
 # ------------------------------------------------------------
 
 gtest_discover_tests(
-GrammarTests
+        GrammarTests
 )
